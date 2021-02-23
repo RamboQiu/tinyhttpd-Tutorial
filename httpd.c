@@ -37,17 +37,29 @@
 
 #define SERVER_STRING "Server: jdbhttpd/0.1.0\r\n"
 
+/* 处理从套接字上监听到的一个 HTTP 请求，在这里可以很大一部分地体现服务器处理请求流程。 */
 void accept_request(int);
+/* 返回给客户端这是个错误请求，HTTP 状态吗 400 BAD REQUEST */
 void bad_request(int);
+/* 读取服务器上某个文件写到 socket 套接字 */
 void cat(int, FILE *);
+/* 主要处理发生在执行 cgi 程序时出现的错误。 */
 void cannot_execute(int);
+/* 把错误信息写到 perror 并退出。 */
 void error_die(const char *);
+/* 运行 cgi 程序的处理，也是个主要函数。 */
 void execute_cgi(int, const char *, const char *, const char *);
+/* 读取套接字的一行，把回车换行等情况都统一为换行符结束。 */
 int get_line(int, char *, int);
+/* 把 HTTP 响应的头部写到套接字。 */
 void headers(int, const char *);
+/* 主要处理找不到请求的文件时的情况。 */
 void not_found(int);
+/* 调用 cat 把服务器文件返回给浏览器。 */
 void serve_file(int, const char *);
+/* 初始化 httpd 服务，包括建立套接字，绑定端口，进行监听等。 */
 int startup(u_short *);
+/* 返回给浏览器表明收到的 HTTP 请求所用的 method 不被支持。 */
 void unimplemented(int);
 
 /**********************************************************************/
@@ -67,11 +79,11 @@ void accept_request(int client)
  int cgi = 0;      /* becomes true if server decides this is a CGI
                     * program */
  char *query_string = NULL;
-
+ //1.为进入首页的 2.输入一个颜色点击提交
  //读http 请求的第一行数据（request line），把请求方法存进 method 中
- numchars = get_line(client, buf, sizeof(buf));
+ numchars = get_line(client, buf, sizeof(buf));//1.buf="GET / HTTP/1.1\n" 2.buf="POST /color.cgi HTTP/1.1\n"
  i = 0; j = 0;
- while (!ISspace(buf[j]) && (i < sizeof(method) - 1))
+ while (!ISspace(buf[j]) && (i < sizeof(method) - 1))/* 不是空格并且够，将buf赋值到method 1.="GET" 2.="POST"*/
  {
   method[i] = buf[j];
   i++; j++;
@@ -100,7 +112,7 @@ void accept_request(int client)
   url[i] = buf[j];
   i++; j++;
  }
- url[i] = '\0';
+ url[i] = '\0';//1.url="/" 2.url="/color.cgi"
 
  //如果这个请求是一个 GET 方法的话
  if (strcasecmp(method, "GET") == 0)
@@ -155,10 +167,10 @@ void accept_request(int client)
    cgi = 1;
    
   if (!cgi)
-   //如果不需要 cgi 机制的话，
+   //如果不需要 cgi 机制的话，1.path="htdocs/index.html"
    serve_file(client, path);
   else
-   //如果需要则调用
+   //如果需要则调用 2.path="htdocs/color.cgi"
    execute_cgi(client, path, method, query_string);
  }
 
@@ -249,8 +261,8 @@ void execute_cgi(int client, const char *path,
  int cgi_input[2];
  pid_t pid;
  int status;
- int i;
  char c;
+ int i = 0;
  int numchars = 1;
  int content_length = -1;
  
@@ -270,7 +282,7 @@ void execute_cgi(int client, const char *path,
   {
    buf[15] = '\0';
    if (strcasecmp(buf, "Content-Length:") == 0)
-    content_length = atoi(&(buf[16])); //记录 body 的长度大小
+    content_length = atoi(&(buf[16])); //记录 body 的长度大小 content内容"color=gray"
    numchars = get_line(client, buf, sizeof(buf));
   }
   
@@ -346,13 +358,20 @@ void execute_cgi(int client, const char *path,
   if (strcasecmp(method, "POST") == 0)
    for (i = 0; i < content_length; i++) {
     recv(client, &c, 1, 0);
+    buf[i] = c;
     write(cgi_input[1], &c, 1);
    }
-   
+  buf[i] = '\0';
+  //color=gray
   //然后从 cgi_output 管道中读子进程的输出，并发送到客户端去
-  while (read(cgi_output[0], &c, 1) > 0)
+  i = 0;
+  while (read(cgi_output[0], &c, 1) > 0) {
+   buf[i] = c;
    send(client, &c, 1, 0);
-
+   i ++;
+  }
+  buf[i] = '\0';
+  // "Content-Type: text/html; charset=ISO-8859-1\r\n\r\n<!DOCTYPE html\n\tPUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\"\n\t \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"en-US\" xml:lang=\"en-US\">\n<head>\n<title>GRAY</title>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=iso-8859-1\" />\n</head>\n<body bgcolor=\"gray\">\n<h1>This is gray</h1>\n</body>\n</html>"
   //关闭管道
   close(cgi_output[0]);
   close(cgi_input[1]);
@@ -585,7 +604,7 @@ int main(void)
 
  while (1)
  {
-  //阻塞等待客户端的连接，参读《TLPI》P1157
+  //阻塞等待客户端的连接，参读《TLPI》P1157 client_sock类似id，对应这个建立的链接
   client_sock = accept(server_sock,
                        (struct sockaddr *)&client_name,
                        &client_name_len);
